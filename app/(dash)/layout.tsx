@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/ui/Sidebar";
 export default function DashLayout({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
-      <Sidebar active="overview" programName="Payments Platform" />
+      <Sidebar programName="Payments Platform" />
       <main style={{ flex: 1, padding: "18px 22px" }}>{children}</main>
     </div>
   );

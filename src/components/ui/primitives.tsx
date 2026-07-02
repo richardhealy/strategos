@@ -22,12 +22,14 @@ export function KpiTile({ label, value, sub, accent }: { label: string; value: s
   );
 }
 
-const TONE: Record<string, string> = {
+export type BadgeTone = "low" | "medium" | "high" | "critical" | "accent" | "muted";
+
+const TONE: Record<BadgeTone, string> = {
   low: "var(--sev-low)", medium: "var(--sev-medium)", high: "var(--sev-high)",
   critical: "var(--sev-critical)", accent: "var(--accent)", muted: "var(--text-dim)",
 };
-export function Badge({ tone, children }: { tone: keyof typeof TONE | string; children: ReactNode }) {
-  const color = TONE[tone] ?? "var(--text-dim)";
+export function Badge({ tone, children }: { tone: BadgeTone; children: ReactNode }) {
+  const color = TONE[tone];
   return (
     <span style={{ fontSize: 11, color, background: "var(--surface-2)", padding: "2px 8px", borderRadius: "var(--radius-sm)" }}>{children}</span>
   );

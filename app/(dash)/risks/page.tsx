@@ -10,7 +10,7 @@ export default async function Risks() {
     orderBy: { score: "desc" },
     include: { initiative: { select: { title: true } } },
   }) : [];
-  const tone = (s: string) => s === "CRITICAL" ? "critical" : s === "HIGH" ? "high" : s === "MEDIUM" ? "medium" : "low";
+  const tone = (s: string): "low" | "medium" | "high" | "critical" => s === "CRITICAL" ? "critical" : s === "HIGH" ? "high" : s === "MEDIUM" ? "medium" : "low";
   return (
     <Panel title="Risks" hint={`${risks.length} scored`}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

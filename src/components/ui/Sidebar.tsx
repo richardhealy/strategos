@@ -1,3 +1,7 @@
+"use client";
+
+import { usePathname } from "next/navigation";
+
 const NAV: { key: string; label: string; href: string }[] = [
   { key: "overview", label: "Overview", href: "/" },
   { key: "initiatives", label: "Initiatives", href: "/initiatives" },
@@ -7,12 +11,13 @@ const NAV: { key: string; label: string; href: string }[] = [
   { key: "audit", label: "Audit log", href: "/audit" },
 ];
 
-export function Sidebar({ active, programName }: { active: string; programName: string }) {
+export function Sidebar({ programName }: { programName: string }) {
+  const pathname = usePathname();
   return (
     <nav style={{ width: 176, background: "var(--surface-1)", borderRight: "1px solid var(--border)", padding: 16, display: "flex", flexDirection: "column", gap: 4, minHeight: "100vh" }}>
       <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 14 }}>strategos</div>
       {NAV.map((n) => {
-        const on = n.key === active;
+        const on = n.href === "/" ? pathname === "/" : pathname.startsWith(n.href);
         return (
           <a key={n.key} href={n.href}
              style={{ padding: "7px 10px", borderRadius: "var(--radius-sm)", fontSize: 13,

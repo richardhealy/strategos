@@ -39,6 +39,7 @@ export class HitlGate {
         reason,
       },
     });
+    await recordAction({ actor: decidedBy, action: approve ? "decide-approve" : "decide-reject", proposalId, detail: { reason } });
   }
 
   // Perform the external action. Refuses anything not explicitly APPROVED.

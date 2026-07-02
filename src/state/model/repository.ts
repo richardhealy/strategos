@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { buildRiskMatrix, type MatrixRow } from "@/state/model/matrix";
-import { velocityPerSprint, velocityTrend } from "@/agents/risk/velocity";
+import { velocityTrend } from "@/agents/risk/velocity";
 import { programHealthScore, healthBand } from "@/state/model/health";
 import type { VelocityTrend } from "@prisma/client";
 
@@ -89,7 +89,7 @@ export const programModel = {
       const sched = i.riskScores[0];
       const sev = sched?.severity ?? "LOW";
       const forecast = sev === "CRITICAL" || sev === "HIGH" ? "at risk" : sev === "MEDIUM" ? "tight" : "on track";
-      const tone = sev === "CRITICAL" ? "critical" : sev === "HIGH" ? "high" : sev === "MEDIUM" ? "medium" : "low";
+      const tone: "low" | "medium" | "high" | "critical" = sev === "CRITICAL" ? "critical" : sev === "HIGH" ? "high" : sev === "MEDIUM" ? "medium" : "low";
       return { id: i.id, title: i.title, owner: i.owner, progress, forecast, tone };
     });
   },
