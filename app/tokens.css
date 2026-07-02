@@ -1,0 +1,27 @@
+/* app/tokens.css */
+:root {
+  --bg: #0b0e14;
+  --surface-1: #131826;
+  --surface-2: #1b2233;
+  --border: #1c2230;
+  --text: #e6e6e6;
+  --text-dim: #7d879c;
+  --text-faint: #5b647c;
+  --accent: #7aa2f7;
+  --accent-dim: #1b2540;
+  --sev-low: #9ece6a;
+  --sev-medium: #e0af68;
+  --sev-high: #ff9e64;
+  --sev-critical: #f7768e;
+  --radius: 8px;
+  --radius-sm: 5px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+}
+a { color: inherit; text-decoration: none; }
