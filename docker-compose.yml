@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: strategos
+      POSTGRES_PASSWORD: strategos
+      POSTGRES_DB: strategos
+    ports:
+      - "5432:5432"
+    volumes:
+      - strategos_pgdata:/var/lib/postgresql/data
+volumes:
+  strategos_pgdata:

@@ -1,0 +1,284 @@
+// strategos program state model
+// A structured, versioned model of the program, updated from integrations
+// on a schedule and on webhook events. The agents reason over THIS model,
+// not the raw tickets.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum IntegrationKind {
+  LINEAR
+  JIRA
+  GITHUB
+  GITLAB
+  AZURE_DEVOPS
+}
+
+enum ItemStatus {
+  BACKLOG
+  PLANNED
+  IN_PROGRESS
+  BLOCKED
+  IN_REVIEW
+  DONE
+  CANCELLED
+}
+
+enum RiskKind {
+  SCHEDULE
+  DEPENDENCY
+  BLOCKER
+  TEAM
+}
+
+enum RiskSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum VelocityTrend {
+  DROPPING
+  STABLE
+  RISING
+}
+
+enum ProposalKind {
+  COMMUNICATION // send an external message
+  TICKET_WRITE  // create/update a ticket in an integration
+  PLAN_CHANGE   // alter the program plan
+}
+
+enum ProposalState {
+  PENDING
+  APPROVED
+  REJECTED
+  APPLIED
+  FAILED
+}
+
+// ---------- Program structure ----------
+
+model Program {
+  id          String       @id @default(cuid())
+  name        String
+  createdAt   DateTime     @default(now())
+  initiatives Initiative[]
+  teams       Team[]
+}
+
+model Team {
+  id                String             @id @default(cuid())
+  program           Program            @relation(fields: [programId], references: [id])
+  programId         String
+  name              String
+  epics             Epic[]
+  velocitySnapshots VelocitySnapshot[]
+  createdAt         DateTime           @default(now())
+}
+
+model Initiative {
+  id          String       @id @default(cuid())
+  program     Program      @relation(fields: [programId], references: [id])
+  programId   String
+  title       String
+  owner       String?
+  status      ItemStatus   @default(PLANNED)
+  targetDate  DateTime?
+  epics       Epic[]
+  riskScores  RiskScore[]
+  source      ExternalRef?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([programId, status])
+}
+
+model Epic {
+  id             String       @id @default(cuid())
+  initiative     Initiative   @relation(fields: [initiativeId], references: [id])
+  initiativeId   String
+  team           Team?        @relation(fields: [teamId], references: [id])
+  teamId         String?
+  title          String
+  status         ItemStatus   @default(BACKLOG)
+  estimatePoints Float?
+  targetDate     DateTime?
+  tasks          Task[]
+  // dependency graph edges
+  dependsOn      Dependency[] @relation("DependsOn")
+  requiredBy     Dependency[] @relation("RequiredBy")
+  source         ExternalRef?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([initiativeId, status])
+}
+
+model Task {
+  id             String     @id @default(cuid())
+  epic           Epic       @relation(fields: [epicId], references: [id])
+  epicId         String
+  title          String
+  status         ItemStatus @default(BACKLOG)
+  estimatePoints Float?
+  assignee       String?
+  criticalPath   Boolean    @default(false)
+  stalledSince   DateTime?  // set when a critical-path item stops moving
+  source         ExternalRef?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([epicId, status])
+}
+
+model Dependency {
+  id        String   @id @default(cuid())
+  from      Epic     @relation("DependsOn", fields: [fromId], references: [id])
+  fromId    String
+  to        Epic     @relation("RequiredBy", fields: [toId], references: [id])
+  toId      String
+  resolved  Boolean  @default(false)
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@unique([fromId, toId])
+}
+
+// ---------- Metrics & risk ----------
+
+model VelocitySnapshot {
+  id            String        @id @default(cuid())
+  team          Team          @relation(fields: [teamId], references: [id])
+  teamId        String
+  periodStart   DateTime
+  periodEnd     DateTime
+  completedPts  Float
+  committedPts  Float
+  trend         VelocityTrend @default(STABLE)
+  createdAt     DateTime      @default(now())
+
+  @@index([teamId, periodStart])
+}
+
+model RiskScore {
+  id           String       @id @default(cuid())
+  initiative   Initiative   @relation(fields: [initiativeId], references: [id])
+  initiativeId String
+  kind         RiskKind
+  severity     RiskSeverity
+  score        Float        // 0..1
+  confidence   Float?       // 0..1
+  explanation  String       // plain-language, audience-safe
+  mitigation   String?      // draft mitigation
+  escalated    Boolean      @default(false)
+  computedAt   DateTime     @default(now())
+
+  @@index([initiativeId, kind, computedAt])
+}
+
+// ---------- Provenance & audit (the "versioned" layer) ----------
+
+// Every entity synced from an integration keeps a pointer back to its origin.
+model ExternalRef {
+  id           String          @id @default(cuid())
+  kind         IntegrationKind
+  externalId   String          // id in the source system
+  url          String?
+  raw          Json?           // last raw payload, for debugging
+  syncedAt     DateTime        @default(now())
+
+  initiative   Initiative?     @relation(fields: [initiativeId], references: [id])
+  initiativeId String?         @unique
+  epic         Epic?           @relation(fields: [epicId], references: [id])
+  epicId       String?         @unique
+  task         Task?           @relation(fields: [taskId], references: [id])
+  taskId       String?         @unique
+
+  @@unique([kind, externalId])
+}
+
+// A row per state change so the model is queryable as-of any point in time.
+model StateChange {
+  id         String   @id @default(cuid())
+  entityType String   // "Initiative" | "Epic" | "Task" | "RiskScore" ...
+  entityId   String
+  field      String
+  before     Json?
+  after      Json?
+  source     String   // "sync:linear" | "agent:planner" | "hitl:apply" ...
+  at         DateTime @default(now())
+
+  @@index([entityType, entityId, at])
+}
+
+// Every agent action, whether or not it touched the outside world.
+model ActionLog {
+  id        String   @id @default(cuid())
+  actor     String   // "planner" | "risk" | "communicator" | "escalator" | "sync"
+  action    String
+  detail    Json?
+  proposal  HitlProposal? @relation(fields: [proposalId], references: [id])
+  proposalId String?
+  at        DateTime @default(now())
+
+  @@index([actor, at])
+}
+
+// ---------- HITL gate ----------
+
+// The agent proposes; a human approves; only then does strategos act.
+model HitlProposal {
+  id         String        @id @default(cuid())
+  kind       ProposalKind
+  state      ProposalState @default(PENDING)
+  summary    String
+  payload    Json          // the exact external action to perform once approved
+  createdBy  String        // originating agent
+  createdAt  DateTime      @default(now())
+  decidedAt  DateTime?
+  decidedBy  String?
+  reason     String?       // approver note / rejection reason
+  appliedAt  DateTime?
+  actions    ActionLog[]
+
+  draft      CommunicationDraft?
+
+  @@index([state, kind, createdAt])
+}
+
+model CommunicationDraft {
+  id          String        @id @default(cuid())
+  proposal    HitlProposal  @relation(fields: [proposalId], references: [id])
+  proposalId  String        @unique
+  channel     String        // "exec-update" | "agenda" | "summary" | "follow-up"
+  audience    String?
+  subject     String?
+  body        String
+  gradeScore  Float?        // assay grade, 0..1
+  gradePass   Boolean?      // must be true before a human ever sees it
+  gradeReport Json?
+  createdAt   DateTime      @default(now())
+}
+
+// ---------- Integration sync bookkeeping ----------
+
+model SyncCursor {
+  id         String          @id @default(cuid())
+  kind       IntegrationKind
+  resource   String          // "issues" | "epics" | "pullRequests" | "pipelines"
+  cursor     String?         // opaque pagination / delta token
+  lastSynced DateTime?
+  updatedAt  DateTime        @updatedAt
+
+  @@unique([kind, resource])
+}
