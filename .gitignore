@@ -9,5 +9,10 @@ coverage/
 prisma/*.db
 .turbo/
 
+# generated / local tooling
+next-env.d.ts
+tsconfig.tsbuildinfo
+.claude/
+
 # brainstorming visual companion
 .superpowers/
