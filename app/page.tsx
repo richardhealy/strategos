@@ -40,6 +40,11 @@ export default async function Home() {
           </ul>
         )}
       </section>
+
+      <footer style={{ marginTop: 48, paddingTop: 16, borderTop: "1px solid #1c2230", fontSize: 13, opacity: 0.6 }}>
+        <a href="/privacy" style={{ color: "inherit", marginRight: 16 }}>Privacy</a>
+        <a href="/terms" style={{ color: "inherit" }}>Terms</a>
+      </footer>
     </main>
   );
 }
