@@ -1,0 +1,28 @@
+{
+  "$schema": "../../portfolio-capture/schema/portfolio.config.schema.json",
+  "project": "strategos",
+  "baseUrl": "http://localhost:3000",
+  "outDir": "/Users/richardfernandez/Code/portfolio-assets/strategos",
+  "boot": {
+    "mode": "attach",
+    "readyWhen": { "type": "http", "url": "http://localhost:3000", "expectStatus": 200 }
+  },
+  "seed": {
+    "command": "npx tsx prisma/seed.ts",
+    "env": { "DATABASE_URL": "postgresql://strategos:strategos@localhost:5432/strategos" },
+    "resetBetweenRuns": false
+  },
+  "themes": ["light"],
+  "viewports": [{ "name": "desktop", "width": 1440, "height": 900 }],
+  "routes": [
+    {
+      "path": "/",
+      "name": "dashboard",
+      "state": "populated",
+      "priority": 1,
+      "waitFor": "h1",
+      "clip": "main",
+      "fullPage": false
+    }
+  ]
+}
