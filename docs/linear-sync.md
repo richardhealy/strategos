@@ -1,7 +1,7 @@
 # Running a Linear sync (L1)
 
 L1 is read-only: it pulls your Linear workspace into the strategos program model
-and recomputes risk with the real engine. Webhooks (L2) and writes (L3) come later.
+and recomputes risk with the real engine. Webhooks (L2) below; writes (L3) later.
 
 ## Mapping
 
@@ -41,4 +41,19 @@ and recomputes risk with the real engine. Webhooks (L2) and writes (L3) come lat
 - Re-running the sync is idempotent (rows are matched by `ExternalRef`), and every
   changed field writes a provenance row.
 - L1 does not yet set `Epic.teamId` from issues, so velocity-based risk is
-  conservative until L2 refines the team association.
+  conservative until a later refinement.
+
+## Webhooks (L2)
+
+1. Set `LINEAR_WEBHOOK_SECRET` in `.env` (any strong random string you also give Linear).
+2. In Linear → Settings → API → Webhooks, create a webhook:
+   - URL: `<your deploy>/api/webhooks/linear`
+   - Secret: the same `LINEAR_WEBHOOK_SECRET`
+   - Subscribe to Issues / Projects / Cycles.
+3. On a change in Linear, the route verifies the `linear-signature` HMAC + a 60s
+   replay window, then emits `integration/webhook`; the `onWebhook` Inngest
+   function runs an idempotent `syncIntegration('LINEAR')`, updating the model
+   within ~60s. (True per-resource targeting is a later optimization; the full
+   resync is idempotent via `ExternalRef`.)
+4. Locally, run the Inngest dev server alongside the app to process events:
+   `npm run inngest:dev`.
