@@ -6,6 +6,7 @@ import type {
 import { linearConfig } from "@/config/linear";
 import { pullProjects, pullMilestones, pullIssues, pullDelivery } from "@/integrations/linear/pull";
 import { verifyLinearSignature, withinReplayWindow, parseLinearWebhook } from "@/integrations/linear/webhook";
+import { writeIssue } from "@/integrations/linear/write";
 
 // Tickets, epics, cycles via the Linear SDK. Reads are live (L1); webhook verify
 // and writes are the next phases (L2/L3).
@@ -49,8 +50,8 @@ export class LinearIntegration implements Integration {
     return parseLinearWebhook(body);
   }
 
-  async writeTicket(_payload: unknown): Promise<{ externalId: string; url?: string }> {
-    // Reached ONLY via the HITL gate after human approval (L3).
-    throw new Error("LinearIntegration.writeTicket not implemented (L3)");
+  async writeTicket(payload: unknown): Promise<{ externalId: string; url?: string }> {
+    // Reached ONLY via the HITL gate after human approval.
+    return writeIssue(payload);
   }
 }
