@@ -8,6 +8,10 @@ import { log } from "@/logger";
 
 const logger = log.child({ integration: "linear", op: "pull" });
 const PAGE = 100;
+// Projects nest two connections (teams, milestones), so Linear's per-query
+// complexity budget (10k) is hit fast — page projects smaller and cap the
+// nested connections. Issues/cycles nest only single objects, so they stay at PAGE.
+const PROJECT_PAGE = 20;
 
 type Connection<T> = { nodes: T[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } };
 interface GqlResponse<T> { data?: Record<string, Connection<T>>; errors?: { message: string }[] }
@@ -55,12 +59,12 @@ interface CycleNode {
 
 const PROJECTS_QUERY = `
   query Projects($after: String) {
-    projects(first: ${PAGE}, after: $after) {
+    projects(first: ${PROJECT_PAGE}, after: $after) {
       nodes {
         id name targetDate state
         lead { name }
-        teams { nodes { key } }
-        projectMilestones { nodes { id name targetDate } }
+        teams(first: 10) { nodes { key } }
+        projectMilestones(first: 50) { nodes { id name targetDate } }
       }
       pageInfo { hasNextPage endCursor }
     }
