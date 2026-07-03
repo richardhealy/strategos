@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.0",
+    "@linear/sdk": "^88.0.0",
     "@prisma/client": "^6.1.0",
     "inngest": "^3.27.0",
     "next": "^15.1.0",
