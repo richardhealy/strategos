@@ -1,7 +1,7 @@
 # Running a Linear sync (L1)
 
 L1 is read-only: it pulls your Linear workspace into the strategos program model
-and recomputes risk with the real engine. Webhooks (L2) below; writes (L3) later.
+and recomputes risk with the real engine. Webhooks (L2) and writes (L3) below.
 
 ## Mapping
 
@@ -57,3 +57,21 @@ and recomputes risk with the real engine. Webhooks (L2) below; writes (L3) later
    resync is idempotent via `ExternalRef`.)
 4. Locally, run the Inngest dev server alongside the app to process events:
    `npm run inngest:dev`.
+
+## Writes (L3) — through the HITL gate
+
+Writes require the Linear API key to have write scope. Nothing writes without a
+human approving the proposal first.
+
+1. An agent proposes a `TICKET_WRITE` with payload
+   `{ kind: "LINEAR", action: "create" | "update", issue: { teamId?, id?, title?, description?, stateId? } }`.
+2. It appears in the dashboard approval inbox. On **Approve**, the gate's `apply`
+   runs the `TICKET_WRITE` effect → `LinearIntegration.writeTicket` →
+   `issueCreate`/`issueUpdate`. An unapproved proposal cannot write (the gate's
+   hard stop is pinned by `tests/hitl.gate.test.ts`).
+3. The new/updated issue is reflected back into the model by the next scheduled
+   or webhook sync (idempotent via `ExternalRef`).
+
+Manual smoke: seed a `TICKET_WRITE` proposal (or have an agent create one),
+approve it in the dashboard, and confirm the issue appears/updates in Linear.
+Requires a write-scoped `LINEAR_API_KEY`.
