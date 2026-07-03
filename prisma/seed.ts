@@ -1,8 +1,7 @@
 // prisma/seed.ts
 import "dotenv/config";
 import { db } from "../src/db";
-import { scoreScheduleRisk } from "../src/agents/risk/scoring";
-import { velocityPerSprint } from "../src/agents/risk/velocity";
+import { recomputeRisk } from "../src/state/model/recompute";
 import { hitl } from "../src/hitl/gate";
 import type { ItemStatus } from "@prisma/client";
 
@@ -62,11 +61,9 @@ async function main() {
 
   // Teams + velocity history (raw facts).
   const teamId = new Map<string, string>();
-  const teamPerSprint = new Map<string, number>();
   for (const t of TEAMS) {
     const team = await db.team.create({ data: { programId: program.id, name: t.name } });
     teamId.set(t.name, team.id);
-    teamPerSprint.set(t.name, velocityPerSprint(t.velocity));
     for (let i = 0; i < t.velocity.length; i++) {
       const start = new Date(now - (t.velocity.length - i) * SPRINT_MS);
       const end = new Date(start.getTime() + SPRINT_MS);
@@ -93,19 +90,10 @@ async function main() {
     await db.task.create({ data: { epicId: epic.id, title: "completed work", status: "DONE", estimatePoints: spec.done } });
     await db.task.create({ data: { epicId: epic.id, title: "remaining work", status: "IN_PROGRESS", estimatePoints: spec.remaining, criticalPath: true } });
 
-    // RUN THE ENGINE
-    const perSprint = teamPerSprint.get(spec.team) ?? 0;
-    const sprintsRemaining = Math.max(0, Math.ceil((targetDate.getTime() - now) / SPRINT_MS));
-    const risk = scoreScheduleRisk({ remainingPoints: spec.remaining, velocityPerSprint: perSprint, sprintsRemaining });
-    await db.riskScore.create({
-      data: {
-        initiativeId: init.id, kind: "SCHEDULE", severity: risk.severity, score: risk.score,
-        confidence: 0.8, explanation: risk.explanation,
-        mitigation: risk.willSlip ? "Re-scope or add capacity next sprint." : undefined,
-        escalated: risk.severity === "CRITICAL",
-      },
-    });
   }
+
+  // Engine-computed SCHEDULE risk over the seeded facts (shared with live sync).
+  await recomputeRisk(program.id);
 
   // A dependency + a DEPENDENCY risk on Fraud engine (index 2) depending on Ledger (index 1).
   const fraud = initIds[2]!, ledger = initIds[1]!;
