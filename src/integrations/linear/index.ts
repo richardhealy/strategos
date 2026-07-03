@@ -5,6 +5,7 @@ import type {
 } from "@/integrations/types";
 import { linearConfig } from "@/config/linear";
 import { pullProjects, pullMilestones, pullIssues, pullDelivery } from "@/integrations/linear/pull";
+import { verifyLinearSignature, withinReplayWindow, parseLinearWebhook } from "@/integrations/linear/webhook";
 
 // Tickets, epics, cycles via the Linear SDK. Reads are live (L1); webhook verify
 // and writes are the next phases (L2/L3).
@@ -31,13 +32,21 @@ export class LinearIntegration implements Integration {
     return { items, nextCursor: null };
   }
 
-  verifyWebhook(_headers: Record<string, string>, _body: string): boolean {
-    // L2: HMAC-verify with LINEAR_WEBHOOK_SECRET before trusting any payload.
-    return false;
+  verifyWebhook(headers: Record<string, string>, body: string): boolean {
+    const secret = process.env.LINEAR_WEBHOOK_SECRET;
+    if (!secret) return false;
+    if (!verifyLinearSignature(body, headers["linear-signature"], secret)) return false;
+    let ts: number | undefined;
+    try {
+      ts = (JSON.parse(body) as { webhookTimestamp?: number }).webhookTimestamp;
+    } catch {
+      return false;
+    }
+    return withinReplayWindow(ts, Date.now());
   }
 
-  parseWebhook(_body: string): { resource: string; externalId: string } {
-    throw new Error("LinearIntegration.parseWebhook not implemented (L2)");
+  parseWebhook(body: string): { resource: string; externalId: string } {
+    return parseLinearWebhook(body);
   }
 
   async writeTicket(_payload: unknown): Promise<{ externalId: string; url?: string }> {
