@@ -9,49 +9,117 @@ import { log } from "@/logger";
 const logger = log.child({ integration: "linear", op: "pull" });
 const PAGE = 100;
 
-// Walk a Linear connection to completion. `fetchPage` returns { nodes, pageInfo }.
-async function collect<T>(fetchPage: (after?: string) => Promise<{ nodes: T[]; pageInfo: { hasNextPage: boolean; endCursor?: string | null } }>): Promise<T[]> {
+type Connection<T> = { nodes: T[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } };
+interface GqlResponse<T> { data?: Record<string, Connection<T>>; errors?: { message: string }[] }
+
+// Walk a Linear GraphQL connection to completion. Every field we need is
+// selected in the query itself, so this is ONE request per page — no lazy
+// per-entity round-trips (which previously fanned out to ~5 requests per issue
+// and blew Linear's 2500/hour rate limit).
+async function paginate<T>(query: string, field: string): Promise<T[]> {
+  const client = linearClient();
   const out: T[] = [];
-  let after: string | undefined;
+  let after: string | null = null;
   for (;;) {
-    const page = await fetchPage(after);
-    out.push(...page.nodes);
-    if (!page.pageInfo.hasNextPage || !page.pageInfo.endCursor) break;
-    after = page.pageInfo.endCursor;
+    const res = (await client.client.rawRequest(query, { after })) as unknown as GqlResponse<T>;
+    if (res.errors?.length) throw new Error(res.errors.map((e) => e.message).join("; "));
+    const conn = res.data?.[field];
+    if (!conn) throw new Error(`Linear GraphQL: response missing '${field}'`);
+    out.push(...conn.nodes);
+    if (!conn.pageInfo.hasNextPage || !conn.pageInfo.endCursor) break;
+    after = conn.pageInfo.endCursor;
   }
   return out;
+}
+
+// ---- GraphQL node shapes (only the fields we map) ----
+interface ProjectNode {
+  id: string; name: string; targetDate: string | null; state: string | null;
+  lead: { name: string } | null;
+  teams: { nodes: { key: string }[] };
+  projectMilestones: { nodes: { id: string; name: string; targetDate: string | null }[] };
+}
+interface IssueNode {
+  id: string; title: string; estimate: number | null; updatedAt: string; priority: number | null;
+  team: { key: string } | null;
+  project: { id: string } | null;
+  projectMilestone: { id: string } | null;
+  assignee: { name: string } | null;
+  state: { type: string; name: string } | null;
+}
+interface CycleNode {
+  startsAt: string; endsAt: string | null;
+  completedScopeHistory: number[]; scopeHistory: number[];
+  team: { key: string } | null;
+}
+
+const PROJECTS_QUERY = `
+  query Projects($after: String) {
+    projects(first: ${PAGE}, after: $after) {
+      nodes {
+        id name targetDate state
+        lead { name }
+        teams { nodes { key } }
+        projectMilestones { nodes { id name targetDate } }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }`;
+
+const ISSUES_QUERY = `
+  query Issues($after: String) {
+    issues(first: ${PAGE}, after: $after) {
+      nodes {
+        id title estimate updatedAt priority
+        team { key }
+        project { id }
+        projectMilestone { id }
+        assignee { name }
+        state { type name }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }`;
+
+const CYCLES_QUERY = `
+  query Cycles($after: String) {
+    cycles(first: ${PAGE}, after: $after) {
+      nodes {
+        startsAt endsAt
+        completedScopeHistory scopeHistory
+        team { key }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }`;
+
+// Unscoped (empty teamKeys) means "all teams"; otherwise keep if any team matches.
+function inScope(teamKeys: string[], keys: string[]): boolean {
+  return !teamKeys.length || keys.some((k) => teamKeys.includes(k));
 }
 
 // Projects for the configured teams. A Linear project can belong to several
 // teams; we include it if any of its teams is configured.
 export async function pullProjects(teamKeys: string[]): Promise<RawInitiative[]> {
-  const client = linearClient();
-  const projects = await collect((after) => client.projects({ first: PAGE, after }));
+  const projects = await paginate<ProjectNode>(PROJECTS_QUERY, "projects");
   const raw: LinearProject[] = [];
   for (const p of projects) {
-    const teams = await p.teams();
-    const keys = teams.nodes.map((t) => t.key);
-    if (teamKeys.length && !keys.some((k) => teamKeys.includes(k))) continue;
-    const lead = p.lead ? await p.lead : undefined;
-    raw.push({ id: p.id, name: p.name, leadName: lead?.name, targetDate: p.targetDate ?? undefined, state: p.state ?? undefined });
+    if (!inScope(teamKeys, p.teams.nodes.map((t) => t.key))) continue;
+    raw.push({ id: p.id, name: p.name, leadName: p.lead?.name, targetDate: p.targetDate ?? undefined, state: p.state ?? undefined });
   }
   logger.info("pulled projects", { count: raw.length });
   return raw.map(mapProject);
 }
 
-// Milestones for the in-scope projects (same team filter as projects).
+// Milestones for the in-scope projects (same team filter as projects), plus one
+// General epic per project to hold un-milestoned issues.
 export async function pullMilestones(teamKeys: string[]): Promise<RawEpic[]> {
-  const client = linearClient();
-  const projects = await collect((after) => client.projects({ first: PAGE, after }));
+  const projects = await paginate<ProjectNode>(PROJECTS_QUERY, "projects");
   const epics: RawEpic[] = [];
   for (const p of projects) {
-    const teams = await p.teams();
-    const keys = teams.nodes.map((t) => t.key);
-    if (teamKeys.length && !keys.some((k) => teamKeys.includes(k))) continue;
-    // one General epic per project for un-milestoned issues
+    if (!inScope(teamKeys, p.teams.nodes.map((t) => t.key))) continue;
     epics.push(generalEpicFor(p.id));
-    const milestones = await p.projectMilestones();
-    for (const m of milestones.nodes) {
+    for (const m of p.projectMilestones.nodes) {
       const raw: LinearMilestone = { id: m.id, name: m.name, projectId: p.id, targetDate: m.targetDate ?? undefined };
       epics.push(mapMilestone(raw));
     }
@@ -62,20 +130,14 @@ export async function pullMilestones(teamKeys: string[]): Promise<RawEpic[]> {
 
 // Issues for the configured teams.
 export async function pullIssues(teamKeys: string[]): Promise<RawTask[]> {
-  const client = linearClient();
-  const issues = await collect((after) => client.issues({ first: PAGE, after }));
+  const issues = await paginate<IssueNode>(ISSUES_QUERY, "issues");
   const raw: LinearIssue[] = [];
   for (const i of issues) {
-    const team = i.team ? await i.team : undefined;
-    if (teamKeys.length && (!team || !teamKeys.includes(team.key))) continue;
-    const project = i.project ? await i.project : undefined;
-    const milestone = i.projectMilestone ? await i.projectMilestone : undefined;
-    const assignee = i.assignee ? await i.assignee : undefined;
-    const state = i.state ? await i.state : undefined;
+    if (teamKeys.length && (!i.team || !teamKeys.includes(i.team.key))) continue;
     raw.push({
-      id: i.id, title: i.title, projectId: project?.id, milestoneId: milestone?.id, teamKey: team?.key,
-      estimate: i.estimate ?? undefined, assigneeName: assignee?.name,
-      stateType: state?.type, stateName: state?.name, updatedAt: i.updatedAt?.toISOString(), priority: i.priority,
+      id: i.id, title: i.title, projectId: i.project?.id, milestoneId: i.projectMilestone?.id, teamKey: i.team?.key,
+      estimate: i.estimate ?? undefined, assigneeName: i.assignee?.name,
+      stateType: i.state?.type, stateName: i.state?.name, updatedAt: i.updatedAt, priority: i.priority ?? undefined,
     });
   }
   logger.info("pulled issues", { count: raw.length });
@@ -85,20 +147,18 @@ export async function pullIssues(teamKeys: string[]): Promise<RawTask[]> {
 
 // Completed cycles → per-team delivery for velocity.
 export async function pullDelivery(teamKeys: string[]): Promise<DeliveryEvent[]> {
-  const client = linearClient();
-  const cycles = await collect((after) => client.cycles({ first: PAGE, after }));
+  const cycles = await paginate<CycleNode>(CYCLES_QUERY, "cycles");
   const out: LinearCycleDelivery[] = [];
   for (const c of cycles) {
-    const team = c.team ? await c.team : undefined;
-    if (!team) continue;
-    if (teamKeys.length && !teamKeys.includes(team.key)) continue;
-    if (!c.endsAt || c.endsAt.getTime() > Date.now()) continue; // completed cycles only
+    if (!c.team) continue;
+    if (teamKeys.length && !teamKeys.includes(c.team.key)) continue;
+    if (!c.endsAt || new Date(c.endsAt).getTime() > Date.now()) continue; // completed cycles only
     out.push({
-      teamKey: team.key,
+      teamKey: c.team.key,
       completedPoints: c.completedScopeHistory?.at(-1) ?? 0,
       committedPoints: c.scopeHistory?.at(-1) ?? 0,
-      startsAt: c.startsAt.toISOString(),
-      endsAt: c.endsAt.toISOString(),
+      startsAt: c.startsAt,
+      endsAt: c.endsAt,
     });
   }
   logger.info("pulled delivery", { count: out.length });
