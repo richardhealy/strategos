@@ -36,6 +36,20 @@ export const programModel = {
     return p?.id ?? null;
   },
 
+  // Prefer a program created by live sync (anchored by a "__program__" SyncCursor
+  // whose cursor = programId); fall back to the oldest program (the demo seed).
+  async primaryProgramId(): Promise<string | null> {
+    const syncedCursors = await db.syncCursor.findMany({ where: { resource: "__program__" }, orderBy: { updatedAt: "desc" } });
+    for (const c of syncedCursors) {
+      if (c.cursor) {
+        const p = await db.program.findUnique({ where: { id: c.cursor }, select: { id: true } });
+        if (p) return p.id;
+      }
+    }
+    const oldest = await db.program.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
+    return oldest?.id ?? null;
+  },
+
   async healthSummary(programId: string) {
     const [initiatives, risks, pendingApprovals] = await Promise.all([
       db.initiative.findMany({ where: { programId }, select: { status: true } }),

@@ -4,7 +4,7 @@ import { Panel, Badge } from "@/components/ui/primitives";
 export const dynamic = "force-dynamic";
 
 export default async function Risks() {
-  const pid = await programModel.firstProgramId();
+  const pid = await programModel.primaryProgramId();
   const risks = pid ? await db.riskScore.findMany({
     where: { initiative: { programId: pid } },
     orderBy: { score: "desc" },

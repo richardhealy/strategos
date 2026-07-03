@@ -9,7 +9,7 @@ import { approveProposal, rejectProposal } from "./actions";
 export const dynamic = "force-dynamic";
 
 export default async function Overview() {
-  const programId = await programModel.firstProgramId();
+  const programId = await programModel.primaryProgramId();
   if (!programId) {
     return <p style={{ color: "var(--text-dim)" }}>No program seeded yet. Run <code>npm run db:seed</code>.</p>;
   }

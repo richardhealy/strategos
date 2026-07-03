@@ -3,7 +3,7 @@ import { Panel, ProgressBar, Badge } from "@/components/ui/primitives";
 export const dynamic = "force-dynamic";
 
 export default async function Initiatives() {
-  const pid = await programModel.firstProgramId();
+  const pid = await programModel.primaryProgramId();
   const inits = pid ? await programModel.initiativesWithForecast(pid) : [];
   return (
     <Panel title="Initiatives">
