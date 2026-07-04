@@ -3,6 +3,22 @@ import { buildRiskMatrix, type MatrixRow } from "@/state/model/matrix";
 import { velocityTrend } from "@/agents/risk/velocity";
 import { programHealthScore, healthBand } from "@/state/model/health";
 import type { VelocityTrend } from "@prisma/client";
+import type { CandidateTask } from "@/agents/sprint/plan";
+
+export interface SprintTicket { externalId: string; title: string; priority: number | null; assignee: string | null }
+export interface CurrentSprint {
+  index: number; startsAt: string; endsAt: string; capacityTarget: number;
+  count: number; state: string; rationale: string; tickets: SprintTicket[];
+}
+interface SprintPayload {
+  index?: number; startsAt?: string; endsAt?: string; capacityTarget?: number;
+  taskExternalIds?: string[]; rationale?: string;
+}
+
+// Is the sprint whose window ends at `endsAt` still open as of `now`?
+export function isSprintOpen(endsAt: string | undefined, now: Date): boolean {
+  return !!endsAt && new Date(endsAt).getTime() > now.getTime();
+}
 
 // Thin read facade the agents use to reason over the model instead of raw
 // tickets. Kept deliberately small in M0; grows with each agent milestone.
@@ -111,5 +127,83 @@ export const programModel = {
   async recentActivity(limit = 12) {
     const rows = await db.actionLog.findMany({ orderBy: { at: "desc" }, take: limit });
     return rows.map((r) => ({ id: r.id, actor: r.actor, action: r.action, at: r.at }));
+  },
+
+  // ----- sprint planning reads -----
+
+  async candidateTasksForSprint(programId: string): Promise<CandidateTask[]> {
+    const inits = await db.initiative.findMany({
+      where: { programId, managed: true },
+      include: { epics: { include: { tasks: { include: { source: true } } } } },
+    });
+    const out: CandidateTask[] = [];
+    for (const i of inits) {
+      for (const e of i.epics) {
+        for (const t of e.tasks) {
+          if (!t.source) continue; // need the Linear issue id to plan/assign
+          out.push({
+            externalId: t.source.externalId,
+            title: t.title,
+            priority: t.priority,
+            createdAt: t.createdAt,
+            status: t.status,
+          });
+        }
+      }
+    }
+    return out;
+  },
+
+  async activeSprintTaskIds(now: Date): Promise<string[]> {
+    const p = await db.hitlProposal.findFirst({
+      where: { kind: "SPRINT_PLAN", state: { in: ["PENDING", "APPROVED", "APPLIED"] } },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!p) return [];
+    const payload = p.payload as SprintPayload;
+    if (!isSprintOpen(payload.endsAt, now)) return [];
+    return payload.taskExternalIds ?? [];
+  },
+
+  async completedSprintCounts(programId: string): Promise<number[]> {
+    const teams = await db.team.findMany({
+      where: { programId },
+      include: { velocitySnapshots: { orderBy: { periodStart: "asc" }, select: { completedPts: true } } },
+    });
+    return teams.flatMap((t) => t.velocitySnapshots.map((s) => s.completedPts));
+  },
+
+  async sprintCount(): Promise<number> {
+    return db.hitlProposal.count({ where: { kind: "SPRINT_PLAN" } });
+  },
+
+  async currentSprint(): Promise<CurrentSprint | null> {
+    const p = await db.hitlProposal.findFirst({ where: { kind: "SPRINT_PLAN" }, orderBy: { createdAt: "desc" } });
+    if (!p) return null;
+    const payload = p.payload as SprintPayload;
+    const ids = payload.taskExternalIds ?? [];
+    const refs = ids.length
+      ? await db.externalRef.findMany({
+          where: { externalId: { in: ids }, taskId: { not: null } },
+          select: { externalId: true, task: { select: { title: true, priority: true, assignee: true } } },
+        })
+      : [];
+    const byId = new Map(refs.map((r) => [r.externalId, r.task]));
+    const tickets: SprintTicket[] = ids.map((id) => ({
+      externalId: id,
+      title: byId.get(id)?.title ?? id,
+      priority: byId.get(id)?.priority ?? null,
+      assignee: byId.get(id)?.assignee ?? null,
+    }));
+    return {
+      index: payload.index ?? 1,
+      startsAt: payload.startsAt ?? "",
+      endsAt: payload.endsAt ?? "",
+      capacityTarget: payload.capacityTarget ?? ids.length,
+      count: ids.length,
+      state: p.state,
+      rationale: payload.rationale ?? "",
+      tickets,
+    };
   },
 };
