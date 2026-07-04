@@ -60,6 +60,7 @@ enum ProposalKind {
   COMMUNICATION // send an external message
   TICKET_WRITE  // create/update a ticket in an integration
   PLAN_CHANGE   // alter the program plan
+  SPRINT_PLAN   // propose a sprint (cycle) plan
 }
 
 enum ProposalState {
@@ -97,6 +98,7 @@ model Initiative {
   title       String
   owner       String?
   status      ItemStatus   @default(PLANNED)
+  managed     Boolean      @default(false)
   targetDate  DateTime?
   epics       Epic[]
   riskScores  RiskScore[]
@@ -135,6 +137,7 @@ model Task {
   title          String
   status         ItemStatus @default(BACKLOG)
   estimatePoints Float?
+  priority       Int?
   assignee       String?
   criticalPath   Boolean    @default(false)
   stalledSince   DateTime?  // set when a critical-path item stops moving
