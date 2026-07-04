@@ -2,7 +2,7 @@ import type { RawInitiative, RawEpic, RawTask, DeliveryEvent } from "@/integrati
 
 export const GENERAL_EPIC_SUFFIX = "::general";
 
-export interface LinearProject { id: string; name: string; leadName?: string; targetDate?: string; state?: string }
+export interface LinearProject { id: string; name: string; leadName?: string; targetDate?: string; state?: string; managed?: boolean }
 export interface LinearMilestone { id: string; name: string; projectId: string; targetDate?: string }
 export interface LinearIssue {
   id: string; title: string; projectId?: string; milestoneId?: string; teamKey?: string;
@@ -12,7 +12,7 @@ export interface LinearIssue {
 export interface LinearCycleDelivery { teamKey: string; completedPoints: number; committedPoints: number; startsAt: string; endsAt: string }
 
 export function mapProject(p: LinearProject): RawInitiative {
-  return { externalId: p.id, title: p.name, owner: p.leadName, status: p.state ?? "unknown", targetDate: p.targetDate };
+  return { externalId: p.id, title: p.name, owner: p.leadName, status: p.state ?? "unknown", targetDate: p.targetDate, managed: p.managed ?? false };
 }
 
 export function mapMilestone(m: LinearMilestone): RawEpic {
@@ -34,6 +34,7 @@ export function mapIssue(i: LinearIssue): RawTask {
     title: i.title,
     status: i.stateType ?? "unknown",
     estimatePoints: i.estimate,
+    priority: i.priority,
     assignee: i.assigneeName,
     updatedAt: i.updatedAt,
   };

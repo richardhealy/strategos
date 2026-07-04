@@ -3,8 +3,8 @@ import { mapProject, mapMilestone, generalEpicFor, mapIssue, mapCycle, epicExter
 
 describe("mapProject", () => {
   it("maps a project to a RawInitiative", () => {
-    const r = mapProject({ id: "p1", name: "Checkout", leadName: "A. Kir", targetDate: "2026-09-30", state: "started" });
-    expect(r).toEqual({ externalId: "p1", title: "Checkout", owner: "A. Kir", status: "started", targetDate: "2026-09-30" });
+    const r = mapProject({ id: "p1", name: "Checkout", leadName: "A. Kir", targetDate: "2026-09-30", state: "started", managed: true });
+    expect(r).toEqual({ externalId: "p1", title: "Checkout", owner: "A. Kir", status: "started", targetDate: "2026-09-30", managed: true });
   });
 });
 
@@ -41,6 +41,10 @@ describe("mapIssue", () => {
     expect(r.estimatePoints).toBe(5);
     expect(r.assignee).toBe("R. Cho");
     expect(r.status).toBe("started");
+  });
+  it("carries Linear priority onto the task", () => {
+    const r = mapIssue({ id: "i1", title: "x", projectId: "p1", stateType: "started", priority: 2 });
+    expect(r.priority).toBe(2);
   });
 });
 

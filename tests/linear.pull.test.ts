@@ -7,11 +7,30 @@ vi.mock("@/integrations/linear/client", () => ({
   linearClient: () => ({ client: { rawRequest } }),
 }));
 
-import { pullIssues } from "@/integrations/linear/pull";
+import { pullIssues, pullProjects } from "@/integrations/linear/pull";
 
 function onePage(field: string, nodes: unknown[]) {
   return { data: { [field]: { nodes, pageInfo: { hasNextPage: false, endCursor: null } } } };
 }
+
+describe("pullProjects managed flag", () => {
+  beforeEach(() => rawRequest.mockReset());
+  it("marks a project managed only if it carries the configured label", async () => {
+    rawRequest.mockResolvedValueOnce(
+      onePage("projects", [
+        { id: "p1", name: "Real", targetDate: null, state: "started", lead: null,
+          teams: { nodes: [{ key: "ENG" }] }, projectMilestones: { nodes: [] },
+          labels: { nodes: [{ name: "strategos" }] } },
+        { id: "p2", name: "Junk", targetDate: null, state: null, lead: null,
+          teams: { nodes: [{ key: "ENG" }] }, projectMilestones: { nodes: [] },
+          labels: { nodes: [{ name: "misc" }] } },
+      ]),
+    );
+    const inits = await pullProjects([]);
+    expect(inits.find((i) => i.externalId === "p1")?.managed).toBe(true);
+    expect(inits.find((i) => i.externalId === "p2")?.managed).toBe(false);
+  });
+});
 
 describe("pullIssues", () => {
   beforeEach(() => rawRequest.mockReset());
@@ -38,6 +57,7 @@ describe("pullIssues", () => {
         title: "Fix login",
         status: "started",
         estimatePoints: 3,
+        priority: 2,
         assignee: "Ada",
         updatedAt: "2026-01-01T00:00:00.000Z",
       },

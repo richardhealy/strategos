@@ -8,6 +8,7 @@ export interface RawInitiative {
   owner?: string;
   status: string;
   targetDate?: string;
+  managed?: boolean;
   url?: string;
 }
 
@@ -29,6 +30,7 @@ export interface RawTask {
   title: string;
   status: string;
   estimatePoints?: number;
+  priority?: number;
   assignee?: string;
   updatedAt?: string;
   url?: string;

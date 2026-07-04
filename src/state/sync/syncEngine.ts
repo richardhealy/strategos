@@ -21,9 +21,9 @@ export async function syncIntegration(kind: IntegrationKind) {
         const ref = await db.externalRef.findUnique({ where: { kind_externalId: { kind, externalId: raw.externalId } } });
         return ref?.initiativeId ? db.initiative.findUnique({ where: { id: ref.initiativeId } }) : null;
       },
-      create: () => db.initiative.create({ data: { programId, title: raw.title, owner: raw.owner, status: "IN_PROGRESS", targetDate: raw.targetDate ? new Date(raw.targetDate) : null } }),
-      update: (row) => db.initiative.update({ where: { id: row.id }, data: { title: raw.title, owner: raw.owner, targetDate: raw.targetDate ? new Date(raw.targetDate) : null } }),
-      changed: (row) => row.title !== raw.title || (row.owner ?? undefined) !== raw.owner,
+      create: () => db.initiative.create({ data: { programId, title: raw.title, owner: raw.owner, status: "IN_PROGRESS", managed: raw.managed ?? false, targetDate: raw.targetDate ? new Date(raw.targetDate) : null } }),
+      update: (row) => db.initiative.update({ where: { id: row.id }, data: { title: raw.title, owner: raw.owner, managed: raw.managed ?? false, targetDate: raw.targetDate ? new Date(raw.targetDate) : null } }),
+      changed: (row) => row.title !== raw.title || (row.owner ?? undefined) !== raw.owner || row.managed !== (raw.managed ?? false),
     });
   }
 
@@ -62,9 +62,9 @@ export async function syncIntegration(kind: IntegrationKind) {
         const ref = await db.externalRef.findUnique({ where: { kind_externalId: { kind, externalId: raw.externalId } } });
         return ref?.taskId ? db.task.findUnique({ where: { id: ref.taskId } }) : null;
       },
-      create: () => db.task.create({ data: { epicId, title: raw.title, status: doneish ? "DONE" : "IN_PROGRESS", estimatePoints: raw.estimatePoints ?? null, assignee: raw.assignee ?? null } }),
-      update: (row) => db.task.update({ where: { id: row.id }, data: { title: raw.title, status: doneish ? "DONE" : "IN_PROGRESS", estimatePoints: raw.estimatePoints ?? null, assignee: raw.assignee ?? null } }),
-      changed: (row) => row.title !== raw.title || (row.status === "DONE") !== doneish || (row.estimatePoints ?? null) !== (raw.estimatePoints ?? null),
+      create: () => db.task.create({ data: { epicId, title: raw.title, status: doneish ? "DONE" : "IN_PROGRESS", estimatePoints: raw.estimatePoints ?? null, priority: raw.priority ?? null, assignee: raw.assignee ?? null } }),
+      update: (row) => db.task.update({ where: { id: row.id }, data: { title: raw.title, status: doneish ? "DONE" : "IN_PROGRESS", estimatePoints: raw.estimatePoints ?? null, priority: raw.priority ?? null, assignee: raw.assignee ?? null } }),
+      changed: (row) => row.title !== raw.title || (row.status === "DONE") !== doneish || (row.estimatePoints ?? null) !== (raw.estimatePoints ?? null) || (row.priority ?? null) !== (raw.priority ?? null),
     });
   }
 

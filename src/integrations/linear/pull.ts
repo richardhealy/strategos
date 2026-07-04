@@ -4,6 +4,7 @@ import {
   mapProject, mapMilestone, generalEpicFor, mapIssue, mapCycle,
   type LinearProject, type LinearMilestone, type LinearIssue, type LinearCycleDelivery,
 } from "@/integrations/linear/map";
+import { sprintConfig } from "@/config/sprint";
 import { log } from "@/logger";
 
 const logger = log.child({ integration: "linear", op: "pull" });
@@ -42,6 +43,7 @@ interface ProjectNode {
   lead: { name: string } | null;
   teams: { nodes: { key: string }[] };
   projectMilestones: { nodes: { id: string; name: string; targetDate: string | null }[] };
+  labels: { nodes: { name: string }[] };
 }
 interface IssueNode {
   id: string; title: string; estimate: number | null; updatedAt: string; priority: number | null;
@@ -65,6 +67,7 @@ const PROJECTS_QUERY = `
         lead { name }
         teams(first: 10) { nodes { key } }
         projectMilestones(first: 50) { nodes { id name targetDate } }
+        labels(first: 10) { nodes { name } }
       }
       pageInfo { hasNextPage endCursor }
     }
@@ -105,11 +108,13 @@ function inScope(teamKeys: string[], keys: string[]): boolean {
 // Projects for the configured teams. A Linear project can belong to several
 // teams; we include it if any of its teams is configured.
 export async function pullProjects(teamKeys: string[]): Promise<RawInitiative[]> {
+  const label = sprintConfig().label;
   const projects = await paginate<ProjectNode>(PROJECTS_QUERY, "projects");
   const raw: LinearProject[] = [];
   for (const p of projects) {
     if (!inScope(teamKeys, p.teams.nodes.map((t) => t.key))) continue;
-    raw.push({ id: p.id, name: p.name, leadName: p.lead?.name, targetDate: p.targetDate ?? undefined, state: p.state ?? undefined });
+    const managed = p.labels.nodes.some((l) => l.name === label);
+    raw.push({ id: p.id, name: p.name, leadName: p.lead?.name, targetDate: p.targetDate ?? undefined, state: p.state ?? undefined, managed });
   }
   logger.info("pulled projects", { count: raw.length });
   return raw.map(mapProject);
