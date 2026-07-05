@@ -4,7 +4,7 @@ import { mapProject, mapMilestone, generalEpicFor, mapIssue, mapCycle, epicExter
 describe("mapProject", () => {
   it("maps a project to a RawInitiative", () => {
     const r = mapProject({ id: "p1", name: "Checkout", leadName: "A. Kir", targetDate: "2026-09-30", state: "started", managed: true });
-    expect(r).toEqual({ externalId: "p1", title: "Checkout", owner: "A. Kir", status: "started", targetDate: "2026-09-30", managed: true });
+    expect(r).toEqual({ externalId: "p1", title: "Checkout", owner: "A. Kir", status: "started", targetDate: "2026-09-30", managed: true, mode: "HUMAN" });
   });
 });
 

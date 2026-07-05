@@ -58,6 +58,7 @@ describe("pullIssues", () => {
         status: "started",
         estimatePoints: 3,
         priority: 2,
+        blockerExternalIds: [],
         assignee: "Ada",
         updatedAt: "2026-01-01T00:00:00.000Z",
       },
@@ -87,5 +88,45 @@ describe("pullIssues", () => {
   it("throws on GraphQL errors so syncAll can record the failure instead of crashing", async () => {
     rawRequest.mockResolvedValueOnce({ errors: [{ message: "Rate limit exceeded" }] });
     await expect(pullIssues([])).rejects.toThrow(/Rate limit/);
+  });
+});
+
+describe("pullProjects mode from agent label", () => {
+  beforeEach(() => rawRequest.mockReset());
+  it("sets AI when the agent label is present, else HUMAN", async () => {
+    rawRequest.mockResolvedValueOnce(
+      onePage("projects", [
+        { id: "p1", name: "Bot", targetDate: null, state: null, lead: null,
+          teams: { nodes: [{ key: "ENG" }] }, projectMilestones: { nodes: [] },
+          labels: { nodes: [{ name: "strategos" }, { name: "agent" }] } },
+        { id: "p2", name: "Human", targetDate: null, state: null, lead: null,
+          teams: { nodes: [{ key: "ENG" }] }, projectMilestones: { nodes: [] },
+          labels: { nodes: [{ name: "strategos" }] } },
+      ]),
+    );
+    const inits = await pullProjects([]);
+    expect(inits.find((i) => i.externalId === "p1")?.mode).toBe("AI");
+    expect(inits.find((i) => i.externalId === "p2")?.mode).toBe("HUMAN");
+  });
+});
+
+describe("pullIssues description + blockers", () => {
+  beforeEach(() => rawRequest.mockReset());
+  it("carries description and blocked-by issue ids", async () => {
+    rawRequest.mockResolvedValueOnce(
+      onePage("issues", [
+        { id: "i1", title: "A", estimate: null, updatedAt: "2026-01-01T00:00:00.000Z", priority: 0,
+          team: { key: "ENG" }, project: { id: "p1" }, projectMilestone: null,
+          assignee: null, state: { type: "started", name: "s" },
+          description: "do the thing",
+          inverseRelations: { nodes: [
+            { type: "blocks", issue: { id: "blocker1" } },
+            { type: "related", issue: { id: "noise" } },
+          ] } },
+      ]),
+    );
+    const tasks = await pullIssues([]);
+    expect(tasks[0]?.description).toBe("do the thing");
+    expect(tasks[0]?.blockerExternalIds).toEqual(["blocker1"]);
   });
 });

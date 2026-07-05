@@ -2,17 +2,18 @@ import type { RawInitiative, RawEpic, RawTask, DeliveryEvent } from "@/integrati
 
 export const GENERAL_EPIC_SUFFIX = "::general";
 
-export interface LinearProject { id: string; name: string; leadName?: string; targetDate?: string; state?: string; managed?: boolean }
+export interface LinearProject { id: string; name: string; leadName?: string; targetDate?: string; state?: string; managed?: boolean; mode?: "HUMAN" | "AI" }
 export interface LinearMilestone { id: string; name: string; projectId: string; targetDate?: string }
 export interface LinearIssue {
   id: string; title: string; projectId?: string; milestoneId?: string; teamKey?: string;
   estimate?: number; assigneeName?: string; stateType?: string; stateName?: string;
   updatedAt?: string; blockedByIssueIds?: string[]; priority?: number;
+  description?: string; blockerExternalIds?: string[];
 }
 export interface LinearCycleDelivery { teamKey: string; completedPoints: number; committedPoints: number; startsAt: string; endsAt: string }
 
 export function mapProject(p: LinearProject): RawInitiative {
-  return { externalId: p.id, title: p.name, owner: p.leadName, status: p.state ?? "unknown", targetDate: p.targetDate, managed: p.managed ?? false };
+  return { externalId: p.id, title: p.name, owner: p.leadName, status: p.state ?? "unknown", targetDate: p.targetDate, managed: p.managed ?? false, mode: p.mode ?? "HUMAN" };
 }
 
 export function mapMilestone(m: LinearMilestone): RawEpic {
@@ -35,6 +36,8 @@ export function mapIssue(i: LinearIssue): RawTask {
     status: i.stateType ?? "unknown",
     estimatePoints: i.estimate,
     priority: i.priority,
+    description: i.description,
+    blockerExternalIds: i.blockerExternalIds ?? [],
     assignee: i.assigneeName,
     updatedAt: i.updatedAt,
   };

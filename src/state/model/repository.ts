@@ -133,7 +133,7 @@ export const programModel = {
 
   async candidateTasksForSprint(programId: string): Promise<CandidateTask[]> {
     const inits = await db.initiative.findMany({
-      where: { programId, managed: true },
+      where: { programId, managed: true, mode: "HUMAN" },
       include: { epics: { include: { tasks: { include: { source: true } } } } },
     });
     const out: CandidateTask[] = [];

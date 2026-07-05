@@ -5,6 +5,7 @@ import {
   type LinearProject, type LinearMilestone, type LinearIssue, type LinearCycleDelivery,
 } from "@/integrations/linear/map";
 import { sprintConfig } from "@/config/sprint";
+import { agentModeConfig } from "@/config/agentmode";
 import { log } from "@/logger";
 
 const logger = log.child({ integration: "linear", op: "pull" });
@@ -52,6 +53,8 @@ interface IssueNode {
   projectMilestone: { id: string } | null;
   assignee: { name: string } | null;
   state: { type: string; name: string } | null;
+  description: string | null;
+  inverseRelations: { nodes: { type: string; issue: { id: string } | null }[] };
 }
 interface CycleNode {
   startsAt: string; endsAt: string | null;
@@ -83,6 +86,8 @@ const ISSUES_QUERY = `
         projectMilestone { id }
         assignee { name }
         state { type name }
+        description
+        inverseRelations(first: 10) { nodes { type issue { id } } }
       }
       pageInfo { hasNextPage endCursor }
     }
@@ -114,7 +119,8 @@ export async function pullProjects(teamKeys: string[]): Promise<RawInitiative[]>
   for (const p of projects) {
     if (!inScope(teamKeys, p.teams.nodes.map((t) => t.key))) continue;
     const managed = p.labels.nodes.some((l) => l.name === label);
-    raw.push({ id: p.id, name: p.name, leadName: p.lead?.name, targetDate: p.targetDate ?? undefined, state: p.state ?? undefined, managed });
+    const mode = p.labels.nodes.some((l) => l.name === agentModeConfig().label) ? "AI" : "HUMAN";
+    raw.push({ id: p.id, name: p.name, leadName: p.lead?.name, targetDate: p.targetDate ?? undefined, state: p.state ?? undefined, managed, mode });
   }
   logger.info("pulled projects", { count: raw.length });
   return raw.map(mapProject);
@@ -147,6 +153,8 @@ export async function pullIssues(teamKeys: string[]): Promise<RawTask[]> {
       id: i.id, title: i.title, projectId: i.project?.id, milestoneId: i.projectMilestone?.id, teamKey: i.team?.key,
       estimate: i.estimate ?? undefined, assigneeName: i.assignee?.name,
       stateType: i.state?.type, stateName: i.state?.name, updatedAt: i.updatedAt, priority: i.priority ?? undefined,
+      description: i.description ?? undefined,
+      blockerExternalIds: (i.inverseRelations?.nodes ?? []).filter((r) => r.type === "blocks" && r.issue).map((r) => r.issue!.id),
     });
   }
   logger.info("pulled issues", { count: raw.length });

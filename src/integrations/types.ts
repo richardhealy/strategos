@@ -9,6 +9,7 @@ export interface RawInitiative {
   status: string;
   targetDate?: string;
   managed?: boolean;
+  mode?: "HUMAN" | "AI";
   url?: string;
 }
 
@@ -31,6 +32,8 @@ export interface RawTask {
   status: string;
   estimatePoints?: number;
   priority?: number;
+  description?: string;
+  blockerExternalIds?: string[];
   assignee?: string;
   updatedAt?: string;
   url?: string;
