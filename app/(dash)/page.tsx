@@ -42,7 +42,9 @@ export default async function Overview() {
         <KpiTile label="Awaiting you" value={kpis.pendingApprovals} sub="approvals" accent="var(--accent)" />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 10 }}>
+      {/* Equal columns: the (now empty-row-free) heatmap no longer hogs the
+          width, so the dense Blocked list gets room to breathe. */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, alignItems: "start" }}>
         <Panel title="Open work by priority" hint="initiative × priority"><PriorityHeatmap rows={priorityRows} /></Panel>
         <Panel title={`Blocked (${blocked.length})`}><BlockedList items={blocked} /></Panel>
       </div>

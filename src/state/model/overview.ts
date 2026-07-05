@@ -40,6 +40,22 @@ export function bucketOpenByPriority(tasks: TaskLite[]): PriorityCounts {
   return counts;
 }
 
+/** Total open issues across all priority buckets in a row. */
+export function rowOpenTotal(counts: PriorityCounts): number {
+  return counts.urgent + counts.high + counts.medium + counts.low;
+}
+
+/**
+ * Prep priority rows for the heatmap: drop initiatives with no open work (dead
+ * rows that just pad the grid) and sort the rest busiest-first. Generic over any
+ * row carrying the four bucket counts.
+ */
+export function rankOpenWorkRows<T extends PriorityCounts>(rows: T[]): T[] {
+  return rows
+    .filter((r) => rowOpenTotal(r) > 0)
+    .sort((a, b) => rowOpenTotal(b) - rowOpenTotal(a));
+}
+
 export interface OverviewKpis {
   totalIssues: number;
   doneIssues: number;

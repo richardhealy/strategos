@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { progressOf, bucketOpenByPriority, rollupKpis, progressBand } from "@/state/model/overview";
+import { progressOf, bucketOpenByPriority, rollupKpis, progressBand, rowOpenTotal, rankOpenWorkRows } from "@/state/model/overview";
 
 // Linear priority scale: 1 Urgent, 2 High, 3 Medium, 4 Low, 0/undefined None.
 const t = (status: string, priority?: number | null) => ({ status, priority });
@@ -54,6 +54,32 @@ describe("rollupKpis", () => {
 
   it("does not count DONE urgent/high issues as open urgent/high", () => {
     expect(rollupKpis([t("DONE", 1), t("DONE", 2)]).urgentHighOpen).toBe(0);
+  });
+});
+
+describe("rowOpenTotal", () => {
+  it("sums all four priority buckets", () => {
+    expect(rowOpenTotal({ urgent: 1, high: 2, medium: 3, low: 4 })).toBe(10);
+    expect(rowOpenTotal({ urgent: 0, high: 0, medium: 0, low: 0 })).toBe(0);
+  });
+});
+
+describe("rankOpenWorkRows", () => {
+  const row = (id: string, urgent: number, high = 0, medium = 0, low = 0) => ({ id, urgent, high, medium, low });
+
+  it("drops rows with no open work", () => {
+    const rows = [row("a", 0, 0, 0, 0), row("b", 1), row("c", 0, 0, 0, 0)];
+    expect(rankOpenWorkRows(rows).map((r) => r.id)).toEqual(["b"]);
+  });
+
+  it("sorts remaining rows by open total, busiest first", () => {
+    const rows = [row("small", 1), row("big", 5, 5), row("mid", 3)];
+    expect(rankOpenWorkRows(rows).map((r) => r.id)).toEqual(["big", "mid", "small"]);
+  });
+
+  it("preserves the row shape (id/title and counts pass through)", () => {
+    const rows = [{ id: "x", title: "X", urgent: 2, high: 0, medium: 0, low: 0 }];
+    expect(rankOpenWorkRows(rows)).toEqual(rows);
   });
 });
 

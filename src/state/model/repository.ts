@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { buildRiskMatrix, type MatrixRow } from "@/state/model/matrix";
-import { rollupKpis, bucketOpenByPriority, progressOf, progressBand, type PriorityCounts, type CompletionBand } from "@/state/model/overview";
+import { rollupKpis, bucketOpenByPriority, rankOpenWorkRows, progressOf, progressBand, type PriorityCounts, type CompletionBand } from "@/state/model/overview";
 import { velocityTrend } from "@/agents/risk/velocity";
 import { programHealthScore, healthBand } from "@/state/model/health";
 import type { VelocityTrend, ReadinessStatus } from "@prisma/client";
@@ -164,7 +164,8 @@ export const programModel = {
       orderBy: { createdAt: "asc" },
       include: { epics: { include: { tasks: { select: { status: true, priority: true } } } } },
     });
-    return inits.map((i) => ({ id: i.id, title: i.title, ...bucketOpenByPriority(i.epics.flatMap((e) => e.tasks)) }));
+    const rows = inits.map((i) => ({ id: i.id, title: i.title, ...bucketOpenByPriority(i.epics.flatMap((e) => e.tasks)) }));
+    return rankOpenWorkRows(rows); // drop empty initiatives, busiest first
   },
 
   async initiativesWithProgress(programId: string): Promise<InitiativeProgress[]> {
