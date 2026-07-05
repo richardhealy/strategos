@@ -2,8 +2,9 @@ import { db } from "@/db";
 import { buildRiskMatrix, type MatrixRow } from "@/state/model/matrix";
 import { velocityTrend } from "@/agents/risk/velocity";
 import { programHealthScore, healthBand } from "@/state/model/health";
-import type { VelocityTrend } from "@prisma/client";
+import type { VelocityTrend, ReadinessStatus } from "@prisma/client";
 import type { CandidateTask } from "@/agents/sprint/plan";
+import type { DepEdge } from "@/agents/agentplan/waves";
 
 export interface SprintTicket { externalId: string; title: string; priority: number | null; assignee: string | null }
 export interface CurrentSprint {
@@ -18,6 +19,20 @@ interface SprintPayload {
 // Is the sprint whose window ends at `endsAt` still open as of `now`?
 export function isSprintOpen(endsAt: string | undefined, now: Date): boolean {
   return !!endsAt && new Date(endsAt).getTime() > now.getTime();
+}
+
+export interface AgentTaskRow { externalId: string; title: string; description: string | null; status: string; readiness: string | null; updatedAt: Date }
+export interface DispatchPlanView {
+  waves: { externalId: string; title: string; readiness: string | null }[][];
+  readiness: { ready: number; needs_spec: number; blocked: number };
+  state: string; rationale: string;
+}
+interface DispatchPayload { initiativeExternalId?: string; waves?: string[][]; readiness?: { ready: number; needs_spec: number; blocked: number }; rationale?: string }
+
+export function readinessKey(r: string | null): "ready" | "needs_spec" | "blocked" {
+  if (r === "READY") return "ready";
+  if (r === "BLOCKED") return "blocked";
+  return "needs_spec";
 }
 
 // Thin read facade the agents use to reason over the model instead of raw
@@ -205,5 +220,68 @@ export const programModel = {
       rationale: payload.rationale ?? "",
       tickets,
     };
+  },
+
+  // ----- agent-mode reads -----
+
+  async aiInitiatives(programId: string) {
+    const inits = await db.initiative.findMany({
+      where: { programId, managed: true, mode: "AI" },
+      include: { source: true },
+      orderBy: { createdAt: "asc" },
+    });
+    return inits
+      .filter((i) => i.source)
+      .map((i) => ({ id: i.id, externalId: i.source!.externalId, title: i.title }));
+  },
+
+  async agentTasks(initiativeId: string): Promise<{ tasks: AgentTaskRow[]; edges: DepEdge[] }> {
+    const init = await db.initiative.findUnique({
+      where: { id: initiativeId },
+      include: { epics: { include: { tasks: { include: { source: true, blockedBy: { include: { blocker: { include: { source: true } } } } } } } } },
+    });
+    const rows: AgentTaskRow[] = [];
+    const edges: DepEdge[] = [];
+    for (const e of init?.epics ?? []) {
+      for (const t of e.tasks) {
+        if (!t.source) continue;
+        rows.push({ externalId: t.source.externalId, title: t.title, description: t.description, status: t.status, readiness: t.readiness, updatedAt: t.updatedAt });
+        for (const dep of t.blockedBy) {
+          if (dep.blocker.source) edges.push({ blocked: t.source.externalId, blocker: dep.blocker.source.externalId });
+        }
+      }
+    }
+    return { tasks: rows, edges };
+  },
+
+  async saveReadiness(externalId: string, status: ReadinessStatus, reason: string): Promise<void> {
+    const ref = await db.externalRef.findFirst({ where: { externalId, taskId: { not: null } } });
+    if (!ref?.taskId) return;
+    await db.task.update({
+      where: { id: ref.taskId },
+      data: { readiness: status, readinessReason: reason, readinessAt: new Date() },
+    });
+  },
+
+  async readinessBreakdown(initiativeId: string) {
+    const { tasks } = await this.agentTasks(initiativeId);
+    const acc = { ready: 0, needs_spec: 0, blocked: 0 };
+    for (const t of tasks) acc[readinessKey(t.readiness)]++;
+    return acc;
+  },
+
+  async currentDispatchPlan(initiativeExternalId: string): Promise<DispatchPlanView | null> {
+    const proposals = await db.hitlProposal.findMany({ where: { kind: "DISPATCH_PLAN" }, orderBy: { createdAt: "desc" } });
+    const p = proposals.find((x) => (x.payload as DispatchPayload).initiativeExternalId === initiativeExternalId);
+    if (!p) return null;
+    const payload = p.payload as DispatchPayload;
+    const ids = (payload.waves ?? []).flat();
+    const refs = ids.length
+      ? await db.externalRef.findMany({ where: { externalId: { in: ids }, taskId: { not: null } }, select: { externalId: true, task: { select: { title: true, readiness: true } } } })
+      : [];
+    const byId = new Map(refs.map((r) => [r.externalId, r.task]));
+    const waves = (payload.waves ?? []).map((w) =>
+      w.map((id) => ({ externalId: id, title: byId.get(id)?.title ?? id, readiness: byId.get(id)?.readiness ?? null })));
+    return { waves, readiness: payload.readiness ?? { ready: 0, needs_spec: 0, blocked: 0 }, state: p.state, rationale: payload.rationale ?? "" };
   },
 };
