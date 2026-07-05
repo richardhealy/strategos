@@ -1,10 +1,16 @@
 import { db } from "@/db";
 import { buildRiskMatrix, type MatrixRow } from "@/state/model/matrix";
+import { rollupKpis, bucketOpenByPriority, progressOf, progressBand, type PriorityCounts, type CompletionBand } from "@/state/model/overview";
 import { velocityTrend } from "@/agents/risk/velocity";
 import { programHealthScore, healthBand } from "@/state/model/health";
 import type { VelocityTrend, ReadinessStatus } from "@prisma/client";
 import type { CandidateTask } from "@/agents/sprint/plan";
 import type { DepEdge } from "@/agents/agentplan/waves";
+
+export interface OverviewKpisView { totalIssues: number; doneIssues: number; openIssues: number; completePct: number; urgentHighOpen: number; initiatives: number; pendingApprovals: number }
+export type PriorityRow = { id: string; title: string } & PriorityCounts;
+export interface InitiativeProgress { id: string; title: string; owner: string | null; done: number; total: number; pct: number; band: CompletionBand }
+export interface BlockedIssue { externalId: string; title: string; blockers: { title: string }[] }
 
 export interface SprintTicket { externalId: string; title: string; priority: number | null; assignee: string | null }
 export interface CurrentSprint {
@@ -67,15 +73,17 @@ export const programModel = {
     return p?.id ?? null;
   },
 
-  // Prefer a program created by live sync (anchored by a "__program__" SyncCursor
-  // whose cursor = programId); fall back to the oldest program (the demo seed).
+  // Prefer the most-recently-synced program that actually holds data (anchored by
+  // a "__program__" SyncCursor whose cursor = programId). Requiring initiatives
+  // stops an empty program — e.g. one created by a stub integration that pulled
+  // nothing — from shadowing the populated one. Fall back to the oldest program
+  // (the demo seed), which may itself hold the seeded data.
   async primaryProgramId(): Promise<string | null> {
     const syncedCursors = await db.syncCursor.findMany({ where: { resource: "__program__" }, orderBy: { updatedAt: "desc" } });
     for (const c of syncedCursors) {
-      if (c.cursor) {
-        const p = await db.program.findUnique({ where: { id: c.cursor }, select: { id: true } });
-        if (p) return p.id;
-      }
+      if (!c.cursor) continue;
+      const p = await db.program.findUnique({ where: { id: c.cursor }, select: { id: true, _count: { select: { initiatives: true } } } });
+      if (p && p._count.initiatives > 0) return p.id;
     }
     const oldest = await db.program.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
     return oldest?.id ?? null;
@@ -137,6 +145,52 @@ export const programModel = {
       const tone: "low" | "medium" | "high" | "critical" = sev === "CRITICAL" ? "critical" : sev === "HIGH" ? "high" : sev === "MEDIUM" ? "medium" : "low";
       return { id: i.id, title: i.title, owner: i.owner, progress, forecast, tone };
     });
+  },
+
+  // ----- issue-count overview reads (see docs/superpowers/specs/2026-07-05-overview-issue-count-redesign-design.md) -----
+
+  async overviewKpis(programId: string): Promise<OverviewKpisView> {
+    const [tasks, initiatives, pendingApprovals] = await Promise.all([
+      db.task.findMany({ where: { epic: { initiative: { programId } } }, select: { status: true, priority: true } }),
+      db.initiative.count({ where: { programId } }),
+      db.hitlProposal.count({ where: { state: "PENDING" } }),
+    ]);
+    return { ...rollupKpis(tasks), initiatives, pendingApprovals };
+  },
+
+  async openWorkByPriority(programId: string): Promise<PriorityRow[]> {
+    const inits = await db.initiative.findMany({
+      where: { programId },
+      orderBy: { createdAt: "asc" },
+      include: { epics: { include: { tasks: { select: { status: true, priority: true } } } } },
+    });
+    return inits.map((i) => ({ id: i.id, title: i.title, ...bucketOpenByPriority(i.epics.flatMap((e) => e.tasks)) }));
+  },
+
+  async initiativesWithProgress(programId: string): Promise<InitiativeProgress[]> {
+    const inits = await db.initiative.findMany({
+      where: { programId },
+      orderBy: { createdAt: "asc" },
+      include: { epics: { include: { tasks: { select: { status: true } } } } },
+    });
+    return inits.map((i) => {
+      const { done, total, pct } = progressOf(i.epics.flatMap((e) => e.tasks));
+      return { id: i.id, title: i.title, owner: i.owner, done, total, pct, band: progressBand(pct) };
+    });
+  },
+
+  async blockedIssues(programId: string, limit = 12): Promise<BlockedIssue[]> {
+    const rows = await db.task.findMany({
+      where: { epic: { initiative: { programId } }, status: { not: "DONE" }, blockedBy: { some: {} } },
+      orderBy: { priority: "asc" }, // Linear: 1 = Urgent first
+      take: limit,
+      include: { source: { select: { externalId: true } }, blockedBy: { include: { blocker: { select: { title: true } } } } },
+    });
+    return rows.map((t) => ({
+      externalId: t.source?.externalId ?? t.id,
+      title: t.title,
+      blockers: t.blockedBy.map((d) => ({ title: d.blocker.title })),
+    }));
   },
 
   async recentActivity(limit = 12) {

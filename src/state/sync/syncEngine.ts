@@ -2,7 +2,7 @@ import type { IntegrationKind } from "@prisma/client";
 import { db } from "@/db";
 import { integrationFor } from "@/integrations/registry";
 import { upsertByRef } from "@/state/sync/reconcile";
-import { resolveProgram } from "@/state/sync/program";
+import { findProgram, resolveProgram } from "@/state/sync/program";
 import { recomputeRisk } from "@/state/model/recompute";
 import { log } from "@/logger";
 
@@ -53,11 +53,20 @@ async function refMap(kind: IntegrationKind): Promise<Map<string, RefRow>> {
 export async function syncIntegration(kind: IntegrationKind) {
   const logger = log.child({ op: "sync", integration: kind });
   const integration = integrationFor(kind);
-  const programId = await resolveProgram(kind);
   const source = `sync:${kind.toLowerCase()}`;
 
-  // Initiatives (Projects)
+  // Initiatives (Projects). Pull before touching the program so an integration
+  // that yields nothing and has no program yet (e.g. an unimplemented stub) never
+  // manufactures an empty program — those would otherwise shadow the populated
+  // one the dashboard picks. An existing program is always kept and refreshed.
   const { items: inits } = await integration.pullInitiatives({});
+  const existingProgramId = await findProgram(kind);
+  if (!existingProgramId && inits.length === 0) {
+    logger.info("nothing to sync", { reason: "no data pulled and no existing program" });
+    return { initiatives: 0, epics: 0, tasks: 0, velocity: 0, scored: 0 };
+  }
+  const programId = existingProgramId ?? (await resolveProgram(kind));
+
   let refs = await refMap(kind);
   await pool(inits, (raw) =>
     upsertByRef({

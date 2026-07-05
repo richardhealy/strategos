@@ -1,25 +1,31 @@
 import { programModel } from "@/state/model/repository";
 import { pendingProposals } from "@/hitl/queue";
-import { Panel, KpiTile, Badge, ProgressBar } from "@/components/ui/primitives";
-import { RiskHeatmap } from "@/components/viz/RiskHeatmap";
-import { VelocityBars } from "@/components/viz/VelocityBars";
-import { HealthDial } from "@/components/viz/HealthDial";
+import { Panel, KpiTile, Badge, ProgressBar, type BadgeTone } from "@/components/ui/primitives";
+import { PriorityHeatmap } from "@/components/viz/PriorityHeatmap";
+import { BlockedList } from "@/components/viz/BlockedList";
+import type { CompletionBand } from "@/state/model/overview";
 import { approveProposal, rejectProposal } from "./actions";
 
 export const dynamic = "force-dynamic";
+
+// Completion band → progress colour + badge tone. Higher completion reads
+// greener; low completion is neutral/muted, never alarm-red.
+const BAND_COLOR: Record<CompletionBand, string> = { high: "var(--sev-low)", mid: "var(--sev-medium)", low: "var(--text-dim)" };
+const BAND_TONE: Record<CompletionBand, BadgeTone> = { high: "low", mid: "medium", low: "muted" };
 
 export default async function Overview() {
   const programId = await programModel.primaryProgramId();
   if (!programId) {
     return <p style={{ color: "var(--text-dim)" }}>No program seeded yet. Run <code>npm run db:seed</code>.</p>;
   }
-  const [summary, matrix, velocity, inits, pending] = await Promise.all([
-    programModel.healthSummary(programId),
-    programModel.riskMatrix(programId),
-    programModel.velocityByTeam(programId),
-    programModel.initiativesWithForecast(programId),
+  const [kpis, priorityRows, inits, blocked, pending] = await Promise.all([
+    programModel.overviewKpis(programId),
+    programModel.openWorkByPriority(programId),
+    programModel.initiativesWithProgress(programId),
+    programModel.blockedIssues(programId),
     pendingProposals(),
   ]);
+  const completePct = Math.round(kpis.completePct * 100);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -29,16 +35,16 @@ export default async function Overview() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
-        <KpiTile label="Health" value={summary.score} sub={summary.band} accent="var(--sev-medium)" />
-        <KpiTile label="On track" value={`${summary.onTrack}/${summary.total}`} sub="initiatives" />
-        <KpiTile label="Open risks" value={summary.openRisks} sub={`${summary.criticalRisks} critical`} accent="var(--sev-critical)" />
-        <KpiTile label="Predicted slips" value={summary.predictedSlips} sub="this quarter" />
-        <KpiTile label="Awaiting you" value={summary.pendingApprovals} sub="approvals" accent="var(--accent)" />
+        <KpiTile label="Complete" value={`${completePct}%`} sub={`${kpis.doneIssues}/${kpis.totalIssues} issues`} accent="var(--sev-low)" />
+        <KpiTile label="Initiatives" value={kpis.initiatives} sub="tracked" />
+        <KpiTile label="Open issues" value={kpis.openIssues} sub="not yet done" />
+        <KpiTile label="Urgent / high" value={kpis.urgentHighOpen} sub="open, priority 1–2" accent="var(--sev-high)" />
+        <KpiTile label="Awaiting you" value={kpis.pendingApprovals} sub="approvals" accent="var(--accent)" />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 10 }}>
-        <Panel title="Risk heatmap" hint="initiative × type"><RiskHeatmap rows={matrix} /></Panel>
-        <Panel title="Velocity by team"><VelocityBars teams={velocity} /></Panel>
+        <Panel title="Open work by priority" hint="initiative × priority"><PriorityHeatmap rows={priorityRows} /></Panel>
+        <Panel title={`Blocked (${blocked.length})`}><BlockedList items={blocked} /></Panel>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 10 }}>
@@ -48,8 +54,10 @@ export default async function Overview() {
               <div key={i.id} style={{ display: "grid", gridTemplateColumns: "1.3fr .8fr 1fr .7fr", gap: 8, alignItems: "center" }}>
                 <span>{i.title}</span>
                 <span style={{ color: "var(--text-dim)" }}>{i.owner ?? "—"}</span>
-                <ProgressBar value={i.progress} color={`var(--sev-${i.tone})`} />
-                <span style={{ textAlign: "right" }}><Badge tone={i.tone}>{i.forecast}</Badge></span>
+                <ProgressBar value={i.pct} color={BAND_COLOR[i.band]} />
+                <span style={{ textAlign: "right" }}>
+                  <Badge tone={BAND_TONE[i.band]}>{i.total > 0 ? `${i.done}/${i.total}` : "no issues"}</Badge>
+                </span>
               </div>
             ))}
           </div>
@@ -75,10 +83,6 @@ export default async function Overview() {
           </div>
         </Panel>
       </div>
-
-      <Panel title="Program health detail">
-        <HealthDial score={summary.score} band={summary.band} />
-      </Panel>
     </div>
   );
 }
