@@ -21,6 +21,7 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:sync": "tsx scripts/sync-once.ts",
+    "db:plan": "tsx scripts/plan-once.ts",
     "inngest:dev": "inngest-cli dev"
   },
   "dependencies": {
