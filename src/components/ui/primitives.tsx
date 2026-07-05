@@ -1,13 +1,16 @@
 import type { ReactNode } from "react";
 
-export function Panel({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+// `fill` makes the panel fill its container (paired with an absolutely-sized
+// grid cell) and scroll its body — used so the Blocked panel matches the
+// heatmap's height instead of running long.
+export function Panel({ title, hint, children, fill }: { title: string; hint?: string; children: ReactNode; fill?: boolean }) {
   return (
-    <section style={{ background: "var(--surface-1)", borderRadius: "var(--radius)", padding: 14 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
+    <section style={{ background: "var(--surface-1)", borderRadius: "var(--radius)", padding: 14, ...(fill ? { display: "flex", flexDirection: "column", height: "100%", minHeight: 0 } : {}) }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12, flex: "0 0 auto" }}>
         <h2 style={{ fontSize: 13, fontWeight: 600, margin: 0, color: "var(--text)" }}>{title}</h2>
         {hint && <span style={{ fontSize: 11, color: "var(--text-faint)" }}>{hint}</span>}
       </div>
-      {children}
+      {fill ? <div className="ov-scroll" style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto" }}>{children}</div> : children}
     </section>
   );
 }

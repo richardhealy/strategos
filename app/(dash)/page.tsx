@@ -34,7 +34,7 @@ export default async function Overview() {
         <span style={{ fontSize: 11, color: "var(--text-faint)" }}>Linear · Jira · GitHub · GitLab · Azure</span>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+      <div className="ov-kpis">
         <KpiTile label="Complete" value={`${completePct}%`} sub={`${kpis.doneIssues}/${kpis.totalIssues} issues`} accent="var(--sev-low)" />
         <KpiTile label="Initiatives" value={kpis.initiatives} sub="tracked" />
         <KpiTile label="Open issues" value={kpis.openIssues} sub="not yet done" />
@@ -42,14 +42,16 @@ export default async function Overview() {
         <KpiTile label="Awaiting you" value={kpis.pendingApprovals} sub="approvals" accent="var(--accent)" />
       </div>
 
-      {/* Equal columns: the (now empty-row-free) heatmap no longer hogs the
-          width, so the dense Blocked list gets room to breathe. */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, alignItems: "start" }}>
+      {/* Equal-height columns: Blocked is sized to the heatmap and scrolls
+          (see .ov-split in tokens.css). Stacks on mobile. */}
+      <div className="ov-split">
         <Panel title="Open work by priority" hint="initiative × priority"><PriorityHeatmap rows={priorityRows} /></Panel>
-        <Panel title={`Blocked (${blocked.length})`}><BlockedList items={blocked} /></Panel>
+        <div className="ov-split__right">
+          <Panel title={`Blocked (${blocked.length})`} fill><BlockedList items={blocked} /></Panel>
+        </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 10 }}>
+      <div className="ov-row">
         <Panel title="Initiatives">
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {inits.map((i) => (

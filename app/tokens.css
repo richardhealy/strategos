@@ -25,3 +25,45 @@ body {
   font-size: 13px;
 }
 a { color: inherit; text-decoration: none; }
+
+/* ---------- Dashboard shell: sidebar becomes a top bar on small screens ---------- */
+.dash-shell { display: flex; min-height: 100vh; }
+.dash-main { flex: 1; min-width: 0; padding: 18px 22px; } /* min-width:0 lets inner grids shrink instead of overflowing */
+.dash-sidebar {
+  width: 176px; flex-shrink: 0; min-height: 100vh;
+  background: var(--surface-1); border-right: 1px solid var(--border);
+  padding: 16px; display: flex; flex-direction: column; gap: 4px;
+}
+.dash-nav { display: flex; flex-direction: column; gap: 4px; }
+
+/* ---------- Overview: responsive dashboard grids ---------- */
+.ov-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+
+/* Heatmap (left) + Blocked (right) at equal height. The right cell is
+   absolutely sized to the row so it contributes no intrinsic height; the row
+   then takes the (shorter) heatmap's height, align-items:stretch matches the
+   right panel to it, and the Blocked body scrolls. */
+.ov-split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: stretch; }
+.ov-split__right { position: relative; min-height: 0; }
+.ov-split__right > * { position: absolute; inset: 0; }
+
+/* Initiatives (left) + Awaiting approval (right). */
+.ov-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; }
+
+@media (max-width: 860px) {
+  .dash-shell { flex-direction: column; }
+  .dash-main { padding: 14px; }
+  .dash-sidebar {
+    width: auto; min-height: 0; flex-direction: row; align-items: center;
+    gap: 10px; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border);
+  }
+  .dash-nav { flex-direction: row; gap: 4px; }
+  .dash-program { display: none; } /* keep the mobile top bar compact */
+
+  .ov-kpis { grid-template-columns: repeat(2, 1fr); }
+  .ov-split, .ov-row { grid-template-columns: 1fr; }
+  /* stacked: the Blocked panel flows normally again, capped so it stays scrollable */
+  .ov-split__right { position: static; }
+  .ov-split__right > * { position: static; }
+  .ov-split__right .ov-scroll { max-height: 60vh; }
+}

@@ -8,9 +8,9 @@ export default async function DashLayout({ children }: { children: React.ReactNo
   const pid = await programModel.primaryProgramId();
   const program = pid ? await db.program.findUnique({ where: { id: pid }, select: { name: true } }) : null;
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div className="dash-shell">
       <Sidebar programName={program?.name ?? "No program"} />
-      <main style={{ flex: 1, padding: "18px 22px" }}>{children}</main>
+      <main className="dash-main">{children}</main>
     </div>
   );
 }
