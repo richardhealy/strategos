@@ -1,5 +1,6 @@
 import { db } from "@/db";
 import { buildRiskMatrix, type MatrixRow } from "@/state/model/matrix";
+import { buildOpenWorkMatrix, type OpenWorkRow } from "@/state/model/openWork";
 import { velocityTrend } from "@/agents/risk/velocity";
 import { programHealthScore, healthBand } from "@/state/model/health";
 import type { VelocityTrend, ReadinessStatus } from "@prisma/client";
@@ -283,5 +284,41 @@ export const programModel = {
     const waves = (payload.waves ?? []).map((w) =>
       w.map((id) => ({ externalId: id, title: byId.get(id)?.title ?? id, readiness: byId.get(id)?.readiness ?? null })));
     return { waves, readiness: payload.readiness ?? { ready: 0, needs_spec: 0, blocked: 0 }, state: p.state, rationale: payload.rationale ?? "" };
+  },
+
+  // ----- overview reads -----
+
+  // Top-line issue counts for the KPI row. Done counts DONE only, so
+  // done + open === total and the two tiles reconcile.
+  async programStats(programId: string) {
+    const [tasks, initiatives] = await Promise.all([
+      db.task.findMany({ where: { epic: { initiative: { programId } } }, select: { status: true, priority: true } }),
+      db.initiative.count({ where: { programId } }),
+    ]);
+    const total = tasks.length;
+    const done = tasks.filter((t) => t.status === "DONE").length;
+    const open = tasks.filter((t) => t.status !== "DONE");
+    const urgentHigh = open.filter((t) => t.priority === 1 || t.priority === 2).length;
+    return { total, done, openCount: open.length, urgentHigh, initiatives, completePct: total ? Math.round((done / total) * 100) : 0 };
+  },
+
+  // initiative × priority matrix of open work, balance-fixed in buildOpenWorkMatrix.
+  async openWorkMatrix(programId: string): Promise<OpenWorkRow[]> {
+    const inits = await db.initiative.findMany({
+      where: { programId },
+      select: { id: true, title: true, epics: { select: { tasks: { select: { priority: true, status: true } } } } },
+    });
+    return buildOpenWorkMatrix(inits.map((i) => ({ id: i.id, title: i.title, tasks: i.epics.flatMap((e) => e.tasks) })));
+  },
+
+  // Open tasks that have at least one blocker, highest priority first.
+  async blockedTasks(programId: string, limit = 20) {
+    const rows = await db.task.findMany({
+      where: { epic: { initiative: { programId } }, status: { notIn: ["DONE", "CANCELLED"] }, blockedBy: { some: {} } },
+      select: { id: true, title: true, priority: true, blockedBy: { select: { blocker: { select: { title: true } } } } },
+      orderBy: [{ priority: "asc" }, { title: "asc" }],
+      take: limit,
+    });
+    return rows.map((t) => ({ id: t.id, title: t.title, priority: t.priority, blockers: t.blockedBy.map((b) => b.blocker.title) }));
   },
 };
