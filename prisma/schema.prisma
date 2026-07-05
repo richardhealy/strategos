@@ -36,6 +36,17 @@ enum ItemStatus {
   CANCELLED
 }
 
+enum ProjectMode {
+  HUMAN
+  AI
+}
+
+enum ReadinessStatus {
+  READY
+  NEEDS_SPEC
+  BLOCKED
+}
+
 enum RiskKind {
   SCHEDULE
   DEPENDENCY
@@ -61,6 +72,7 @@ enum ProposalKind {
   TICKET_WRITE  // create/update a ticket in an integration
   PLAN_CHANGE   // alter the program plan
   SPRINT_PLAN   // propose a sprint (cycle) plan
+  DISPATCH_PLAN // propose an agent dispatch plan (readiness + waves)
 }
 
 enum ProposalState {
@@ -99,6 +111,7 @@ model Initiative {
   owner       String?
   status      ItemStatus   @default(PLANNED)
   managed     Boolean      @default(false)
+  mode        ProjectMode  @default(HUMAN)
   targetDate  DateTime?
   epics       Epic[]
   riskScores  RiskScore[]
@@ -138,14 +151,31 @@ model Task {
   status         ItemStatus @default(BACKLOG)
   estimatePoints Float?
   priority       Int?
+  description    String?
+  readiness      ReadinessStatus?
+  readinessReason String?
+  readinessAt    DateTime?
   assignee       String?
   criticalPath   Boolean    @default(false)
   stalledSince   DateTime?  // set when a critical-path item stops moving
   source         ExternalRef?
+  blockedBy      TaskDependency[] @relation("Blocked")
+  blocks         TaskDependency[] @relation("Blocker")
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
   @@index([epicId, status])
+}
+
+model TaskDependency {
+  id            String @id @default(cuid())
+  blocked       Task   @relation("Blocked", fields: [blockedTaskId], references: [id], onDelete: Cascade)
+  blockedTaskId String
+  blocker       Task   @relation("Blocker", fields: [blockerTaskId], references: [id], onDelete: Cascade)
+  blockerTaskId String
+
+  @@unique([blockedTaskId, blockerTaskId])
+  @@index([blockedTaskId])
 }
 
 model Dependency {
